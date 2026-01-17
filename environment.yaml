@@ -1,0 +1,36 @@
+name: cuphead_ai
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - opencv
+  - matplotlib
+  # PyTorch with CUDA support for YOLO and RL training
+  - pytorch
+  - torchvision
+  - pytorch-cuda=11.8
+  - pip:
+    # Reinforcement Learning
+    - gymnasium[atari,accept-rom-license]
+    - stable-baselines3[extra]
+    - shimmy  # Compatibility for Gym/Gymnasium
+    
+    # Computer Vision & Object Detection
+    - ultralytics  # For YOLOv8
+    - mss          # Ultra-fast screen capture
+    - screeninfo   # To handle multi-monitor setups
+    
+    # Hardware Interaction
+    - pydirectinput # Bypasses DirectX input blocks
+    - pynput        # For recording your own keypresses
+    - vgamepad      # If you want to simulate an Xbox controller
+    
+    # Utilities
+    - pymem         # Just in case you go back to memory hacking
+    - pandas
+    - tqdm          # Progress bars for training
