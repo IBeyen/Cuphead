@@ -1,28 +1,33 @@
+import time
 import torch
-import torch.nn as nn
 from stable_baselines3 import PPO
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from ultralytics import YOLO
+from stable_baselines3.common.callbacks import CheckpointCallback
+from environment import CupheadEnv
 
-class PretrainedVisionExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim = 612):
-        super().__init__(observation_space, features_dim)
-        
-        yolo_model = YOLO("yolov8n.pt")
-        self.backbone = nn.Sequential(*list(yolo_model.model.children())[:10])
-        
-        # Freeze backbone
-        for param in self.backbone.parameters():
-            param.requires_grad = False
-            
-        self.flatten = nn.Flatten()
-        with torch.no_grad():
-            n_flatten = self.flatten(self.backbone(torch.zeros(1,3,256,256)))
-            
-        self.linear = nn.Linear(n_flatten, features_dim)
-        
-    def forward(self, observations):
-        return self.linear(self.flatten(self.backbone(observations)))
+learning_rate = 1e-5 
+n_steps = 2048 # Number of steps to run per update
+total_timesteps = 100000 # How long to train (adjust as needed)
+
+env = CupheadEnv()
+
+print("Loading pre-trained imitation model...")
+model = PPO.load("cuphead_imitation_model_best", env=env, learning_rate=learning_rate)
+
+checkpoint_callback = CheckpointCallback(
+    save_freq=10000,
+    save_path='./rl_checkpoints/',
+    name_prefix='cuphead_ppo'
+)
+
+print("Starting Reinforcement Learning...")
+print("Switch to Cuphead window immediately!")
+time.sleep(3) # Time to alt-tab
+
+try:
+    model.learn(total_timesteps=total_timesteps, callback=checkpoint_callback)
+    model.save("cuphead_rl_final")
+    print("Training Complete!")
     
-policy_kwargs = dict(features_extractor_class=PretrainedVisionExtractor)
-model = PPO("CnnPolicy", "Cuphead-v0", policy_kwargs=policy_kwargs, verbose=1)
+except KeyboardInterrupt:
+    print("Training interrupted. Saving current model...")
+    model.save("cuphead_rl_interrupted")

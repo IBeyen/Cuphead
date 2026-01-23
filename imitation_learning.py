@@ -10,65 +10,83 @@ from environment import CupheadEnv
 from torch.utils.data import Dataset, DataLoader
 
 class CupheadDataset(Dataset):
-    def __init__(self, root_folder, n_stack=4, img_size=(256, 256)):
+    def __init__(self, root_folder, n_stack=4, original_fps=20, target_fps=15):
         self.samples = []
         self.n_stack = n_stack
-        self.img_size = img_size
         
-        # Crawl directories to find valid sequences
-        for subdir, _, files in os.walk(root_folder):
-            frames = sorted([f for f in files if f.endswith(('.png', '.jpg'))])
-            if len(frames) < n_stack:
-                continue
-            
-            for i in range(n_stack - 1, len(frames)):
-                # Store the paths and the action (parsed from filename)
-                stack_paths = [os.path.join(subdir, frames[j]) for j in range(i-(n_stack-1), i+1)]
-                # Extract action from the last frame's filename
-                # Example: frame_123_z_Key.x.png -> action info is 'z_Key.x'
-                action_str = frames[i].split('_')[2].replace('.png', '').replace('.jpg', '')
-                self.samples.append((stack_paths, action_str))
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx):
-        paths, action_str = self.samples[idx]
-        
-        # Load and stack frames
-        frames = []
-        for p in paths:
-            img = cv2.imread(p)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # Ensure RGB
-            frames.append(img)
-            
-        # Concatenate on channel dimension (resulting in 3*4 = 12 channels)
-        observation = np.concatenate(frames, axis=-1)
-        # Normalize to [0, 1] and transpose to (C, H, W) for PyTorch
-        observation = np.transpose(observation, (2, 0, 1)).astype(np.float32) / 255.0
-        
-        action = self._parse_action(action_str) 
-        
-        return torch.tensor(observation), torch.tensor(action)
-
-    def _parse_action(self, action_str):
-        action_arr =  np.zeros(10, dtype=np.int64)
-        mapping = {
+        self.key_map = {
             "w": 0,
             "a": 1,
             "s": 2,
             "d": 3,
             "Key.shift": 4, # Dash
             "Key.space": 5, # Jump
-            "Key.up": 6, # Special
-            "Key.left": 7, # Shoot
-            "Key.down": 8, # Switch Weapon
+            "Key.up": 6,    # Special
+            "Key.left": 7,  # Shoot
+            "Key.down": 8,  # Switch Weapon
             "Key.right": 9, # Lock
         }
-        action_list = action_str.split('_')
-        for key in action_list:
-            if key in mapping:
-                action_arr[mapping[key]] = 1
+        
+        # Calculate step size for downsampling
+        ratio = original_fps / target_fps
+        
+        print(f"Downsampling dataset from {original_fps} FPS to {target_fps} FPS...")
+        
+        for subdir, _, files in os.walk(root_folder):
+            raw_frames = sorted([f for f in files if f.endswith(('.png', '.jpg'))])
+            
+            if len(raw_frames) < n_stack:
+                continue
+                
+            # Generate indices to keep: 0, 1.33, 2.66 -> 0, 1, 3...
+            resampled_indices = [int(i * ratio) for i in range(int(len(raw_frames) / ratio))]
+            resampled_indices = [i for i in resampled_indices if i < len(raw_frames)]
+            
+            filtered_frames = [raw_frames[i] for i in resampled_indices]
+            
+            for i in range(n_stack - 1, len(filtered_frames)):
+                stack_files = filtered_frames[i-(n_stack-1) : i+1]
+                stack_paths = [os.path.join(subdir, f) for f in stack_files]
+                
+                # Parse action from the current frame's filename
+                filename = stack_files[-1]
+                parts = filename.replace('.png', '').replace('.jpg', '').split('_')
+                
+                # Everything after index 2 are the keys pressed
+                action_keys_list = parts[2:] 
+                
+                self.samples.append((stack_paths, action_keys_list))
+                
+        print(f"Dataset ready. Total samples: {len(self.samples)}")
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        paths, action_keys_list = self.samples[idx]
+        
+        frames = []
+        for p in paths:
+            img = cv2.imread(p)
+            if img is None:
+                # Safeguard for corrupt images
+                return torch.zeros((12, 256, 256)), torch.zeros(10)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            frames.append(img)
+            
+        observation = np.concatenate(frames, axis=-1)
+        observation = np.transpose(observation, (2, 0, 1)).astype(np.float32) / 255.0
+        
+        action = self._parse_action_list(action_keys_list) 
+        
+        return torch.tensor(observation), torch.tensor(action)
+
+    def _parse_action_list(self, action_keys_list):
+        action_arr = np.zeros(10, dtype=np.int64)
+        
+        for key in action_keys_list:
+            if key in self.key_map:
+                action_arr[self.key_map[key]] = 1
                 
         return action_arr
 
@@ -79,7 +97,7 @@ env = CupheadEnv()
 policy_kwargs = dict(features_extractor_class=PretrainedVisionExtractor)
 model = PPO("CnnPolicy", env, policy_kwargs=policy_kwargs, verbose=1)
 
-dataset = CupheadDataset(root_folder="C:/Users/ilanb/Desktop/Code/Cuphead/training_data")
+dataset = CupheadDataset(root_folder="D:/Cuphead Training data/training_data", original_fps=20, target_fps=10)
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
 if len(dataset) == 0:
@@ -90,11 +108,12 @@ print(f"Training on device: {device}")
 
 optimizer = torch.optim.Adam(model.policy.parameters(), lr=3e-4)
 
-epochs = 10
+epochs = 5
 print("Starting Training...")
 
 model.policy.train() # Set to training mode
 
+best_loss = float('inf')
 for epoch in range(epochs):
     epoch_loss = 0
     batch_count = 0
@@ -103,15 +122,7 @@ for epoch in range(epochs):
         observations = observations.to(device)
         actions = actions.to(device)
         
-        # --- Behavioral Cloning Logic ---
-        # "evaluate_actions" returns values, log_prob, and entropy.
-        # We want to MAXIMIZE log_prob of the expert actions.
-        # Therefore, Loss = -log_prob
-        
-        # Actions must be valid indices for MultiDiscrete. 
-        # Since your record.py might produce 0 or 1, ensure they are passed correctly.
-        # SB3 expects actions to be of shape (Batch, 10) for MultiDiscrete([2]*10)
-        
+        # to maximize log_prob of the expert actions loss = -log_prob
         _, log_prob, _ = model.policy.evaluate_actions(observations, actions)
         
         loss = -log_prob.mean()
@@ -131,7 +142,10 @@ for epoch in range(epochs):
     print(f"\nEpoch {epoch+1}/{epochs} Completed. Average Loss: {avg_loss:.4f}")
     
     # Save checkpoint
-    model.save(f"{SAVE_PATH}_epoch_{epoch+1}")
+    if avg_loss < best_loss:
+        best_loss = avg_loss
+        model.save(f"{SAVE_PATH}_best")
+        print(f" >>> New best model found! Saved to {SAVE_PATH}_best")
 
 print("Imitation Learning Complete!")
 model.save("cuphead_ppo_pretrained")
