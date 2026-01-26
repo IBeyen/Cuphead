@@ -8,6 +8,9 @@ from pymem import Pymem
 from get import get_stats
 import time
 from collections import deque
+import shutil
+import os
+import random
 import pydirectinput
 pydirectinput.PAUSE = 0.0  # <--- REMOVES THE 0.1s DELAY
 
@@ -36,20 +39,70 @@ class CupheadEnv(gym.Env):
         self.target_fps = 10
         self.frame_duration = 1.0 / self.target_fps
         self.last_step_time = time.time() # Initialize timer
+        
+        self.games = 0
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         
+        pydirectinput.keyUp('w')
+        pydirectinput.keyUp('a')
+        pydirectinput.keyUp('s')
+        pydirectinput.keyUp('d')
+        pydirectinput.keyUp('shift')
+        pydirectinput.keyUp('up')
+        pydirectinput.keyUp('down')
+        pydirectinput.keyUp('left')
+        pydirectinput.keyUp('right')
+        pydirectinput.keyUp('space')
+        
         if self.last_hp <= 0:
             print("Agent died, restarting")
             time.sleep(3)
+            if self.games >= 10:
+                pydirectinput.keyDown('down')
+                time.sleep(0.1)
+                pydirectinput.keyUp('down')
+                time.sleep(0.1)
+                pydirectinput.keyDown('down')
+                time.sleep(0.1)
+                pydirectinput.keyUp('down')
+                time.sleep(0.2)
+                pydirectinput.keyDown('enter')
+                time.sleep(0.1)
+                pydirectinput.keyUp('enter')
+                time.sleep(10)
+                self.change_save()
+                self.open_game()
+                self.find_boss()
+                self.games = 0
+                time.sleep(1)
+            else:
+                pydirectinput.keyDown('enter')
+                time.sleep(0.2)
+                pydirectinput.keyUp('enter')
+                time.sleep(1)
+            
+        elif self.last_boss_health is not None and self.last_boss_health <= 0:
+            print("Agent won!!!")
+            time.sleep(5)
+            pydirectinput.keyDown('space')
+            time.sleep(0.2)
+            pydirectinput.keyUp('space')
+            time.sleep(5)
             pydirectinput.keyDown('enter')
             time.sleep(0.2)
             pydirectinput.keyUp('enter')
             
-        elif self.last_boss_health is not None and self.last_boss_health <= 0:
-            print("Agent won!!!")
-            exit()
+            if self.games >= 10:
+                self.close_from_map()
+                time.sleep(10)
+                self.change_save()
+                self.open_game()
+                self.games = 0
+            
+            self.find_boss()
+            time.sleep(1)
         
         initial_frame = self.get_obs()
         
@@ -66,6 +119,7 @@ class CupheadEnv(gym.Env):
         self.last_boss_health = boss_hp
         self.last_parry_num = 0
         self.frames = 0
+        self.games += 1
         
         return stacked_obs, {}
 
@@ -135,18 +189,18 @@ class CupheadEnv(gym.Env):
         if player_hp > 10 or player_hp < 0: # Player max HP is usually 3-5
             return 0
         
-        reward = -0.01 
+        reward = -0.00001 
         
         diff_hp = player_hp - self.last_hp
         if diff_hp < 0:
-            reward += diff_hp * 200 
+            reward += diff_hp * 0.2 
             
         diff_boss = self.last_boss_health - boss_hp
         if diff_boss > 0:
-            reward += diff_boss * 1.0 
+            reward += diff_boss * 0.001 
         
         if parry_num > self.last_parry_num:
-            reward += 10
+            reward += 0.01
         
         self.last_hp = player_hp
         self.last_boss_health = boss_hp
@@ -154,9 +208,11 @@ class CupheadEnv(gym.Env):
         
         return reward
         
-    def overwrite_save(self):
+    def overwrite_save(self, name):
         PATH_2_SAVES = 'C:/Users/ilanb/AppData/Roaming/Cuphead'
         WORLD_NAME = 'cuphead_player_data_v1_slot_2.sav'
+        
+        shutil.copy(name, os.path.join(PATH_2_SAVES, WORLD_NAME))
     
     def get_obs(self):
         observation = self._get_screen()
@@ -169,3 +225,123 @@ class CupheadEnv(gym.Env):
         if (self.last_hp <= 0) or (self.last_boss_health <= 0):
             return True
         return False
+    
+    def find_boss(self):
+        pydirectinput.keyDown('w')
+        time.sleep(0.1)
+        pydirectinput.keyUp('w')
+        pydirectinput.keyDown('enter')
+        time.sleep(0.2)
+        pydirectinput.keyUp('enter')
+        time.sleep(0.1)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        
+        pydirectinput.keyDown('s')
+        time.sleep(0.2)
+        pydirectinput.keyUp('s')
+        pydirectinput.keyDown('enter')
+        time.sleep(0.2)
+        pydirectinput.keyUp('enter')
+        time.sleep(0.1)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        
+        pydirectinput.keyDown('w')
+        time.sleep(0.1)
+        pydirectinput.keyUp('w')
+        pydirectinput.keyDown('a')
+        time.sleep(0.1)
+        pydirectinput.keyUp('a')
+        pydirectinput.keyDown('enter')
+        time.sleep(0.2)
+        pydirectinput.keyUp('enter')
+        time.sleep(0.1)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        
+        pydirectinput.keyDown('d')
+        time.sleep(0.2)
+        pydirectinput.keyUp('d')
+        pydirectinput.keyDown('enter')
+        time.sleep(0.2)
+        pydirectinput.keyUp('enter')
+        time.sleep(0.1)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        time.sleep(3)
+        
+    def open_game(self):
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        time.sleep(3)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        time.sleep(1)
+        pydirectinput.keyDown('down')
+        time.sleep(0.1)
+        pydirectinput.keyUp('down')
+        time.sleep(0.1)
+        pydirectinput.keyDown('down')
+        time.sleep(0.1)
+        pydirectinput.keyUp('down')
+        time.sleep(0.1)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        time.sleep(0.1)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        time.sleep(7)
+        
+    def close_from_map(self):
+        pydirectinput.keyDown('esc')
+        time.sleep(0.2)
+        pydirectinput.keyUp('esc')
+        pydirectinput.keyDown('down')
+        time.sleep(0.1)
+        pydirectinput.keyUp('down')
+        time.sleep(0.1)
+        pydirectinput.keyDown('down')
+        time.sleep(0.1)
+        pydirectinput.keyUp('down')
+        time.sleep(0.1)
+        pydirectinput.keyDown('down')
+        time.sleep(0.1)
+        pydirectinput.keyUp('down')
+        time.sleep(0.1)
+        pydirectinput.keyDown('enter')
+        time.sleep(0.1)
+        pydirectinput.keyUp('enter')
+        
+    def change_save(self):
+        files = [
+                # "savescum\cuphead_player_data_All_Bets_Are_Off.sav",
+                 "savescum\cuphead_player_data_Aviary_Action.sav",
+                #  "savescum\cuphead_player_data_Botanic_Panic.sav",
+                 "savescum\cuphead_player_data_Carnival_Kerfuffle.sav",
+                 "savescum\cuphead_player_data_Clip_Joint_Calamity.sav",
+                 "savescum\cuphead_player_data_Dramatic_Fanatic.sav",
+                 "savescum\cuphead_player_data_Fiery_Frolic.sav",
+                 "savescum\cuphead_player_data_Floral_Fury.sav",
+                 "savescum\cuphead_player_data_High_Seas_Hi_Jinx.sav",
+                 "savescum\cuphead_player_data_Honeycomb_Herald.sav",
+                 "savescum\cuphead_player_data_Junkyard_Jive.sav",
+                 "savescum\cuphead_player_data_Murine_Corps.sav",
+                #  "savescum\cuphead_player_data_One_Hell_Of_A_Time.sav",
+                 "savescum\cuphead_player_data_Pyramid_Peril.sav",
+                 "savescum\cuphead_player_data_Railroad_Wrath.sav",
+                 "savescum\cuphead_player_data_Ruse_Of_An_Ooze.sav",
+                 "savescum\cuphead_player_data_Shootin_N_Lootin.sav",
+                 "savescum\cuphead_player_data_Sugarland_Shimmy.sav",
+                 "savescum\cuphead_player_data_Threatnin_Zeplin.sav"
+                 ]
+        selection = random.choice(files)
+        self.overwrite_save(selection)
